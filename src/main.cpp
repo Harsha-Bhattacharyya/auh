@@ -1,10 +1,10 @@
-#include <array>
-#include <cctype>
 #include <cstdlib>
+#include <cstdio>
 #include <iostream>
-#include <memory>
 #include <string>
-#include <vector>
+#include <array>
+#include <memory>
+#include <algorithm>
 
 using namespace std;
 
@@ -116,10 +116,10 @@ int update_pkg(const string &package) {
 }
 
 int clean_cache() {
-  string cmd = "sudo pacman -Scc";
+  string cmd = "sudo pacman -Scc --noconfirm";
   int rc = system(cmd.c_str());
   if (rc == 0) {
-    cout << "Sucessfully cleaned";
+    cout << "Successfully cleaned\n";
     return 0;
   } else {
     cout << "System cleaning failed\n";
@@ -127,9 +127,80 @@ int clean_cache() {
   }
 }
 
+int build_from_github(const std::string &package, const std::string &mirror_url_base = "https://github.com/archlinux/aur") {
+    // tmp working dir
+    const std::string tmpdir = "/tmp/auh_mirror_" + package;
+    // ensure clean tmpdir
+    std::string rm = "rm -rf " + tmpdir;
+    system(rm.c_str());
+
+    // clone mirror (shallow, no tags) into tmpdir
+    std::string clone_cmd = "git clone --depth=1 " + mirror_url_base + ".git " + tmpdir + " 2>/dev/null";
+    if (system(clone_cmd.c_str()) != 0) {
+        std::cerr << "Failed to clone mirror for " << package << '\n';
+        return 1;
+    }
+
+    // list remote branches (use git ls-remote --heads)
+    std::string ls_cmd = "git -C " + tmpdir + " ls-remote --heads origin " + package + " | awk '{print $2}' | sed 's@refs/heads/@@' 2>/dev/null";
+    // capture output
+    std::array<char, 4096> buf;
+    std::string branches;
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(ls_cmd.c_str(), "r"), pclose);
+    if (!pipe) {
+        std::cerr << "Failed to list branches for " << package << '\n';
+        system(("rm -rf " + tmpdir).c_str());
+        return 1;
+    }
+    while (fgets(buf.data(), buf.size(), pipe.get())) branches += buf.data();
+    // trim whitespace/newlines
+    while (!branches.empty() && isspace((unsigned char)branches.back())) branches.pop_back();
+
+    // check if branch equal to package exists
+    bool found = false;
+    size_t pos = 0;
+    while (pos < branches.size()) {
+        size_t nl = branches.find('\n', pos);
+        std::string b = (nl==std::string::npos) ? branches.substr(pos) : branches.substr(pos, nl-pos);
+        if (b == package) { found = true; break; }
+        if (nl==std::string::npos) break;
+        pos = nl + 1;
+    }
+
+    if (!found) {
+        std::cerr << "No branch named '" << package << "' in mirror; aborting.\n";
+        system(("rm -rf " + tmpdir).c_str());
+        return 2;
+    }
+
+    // checkout that branch
+    std::string checkout = "git -C " + tmpdir + " fetch origin " + package + " && git -C " + tmpdir + " checkout " + package + " 2>/dev/null";
+    if (system(checkout.c_str()) != 0) {
+        std::cerr << "Failed to checkout branch " << package << '\n';
+        system(("rm -rf " + tmpdir).c_str());
+        return 3;
+    }
+
+    // run makepkg in tmpdir (as normal user). Use --noconfirm and skip PGP if desired.
+    std::string mkcmd = "cd " + tmpdir + " && makepkg -si --noconfirm --skippgpcheck";
+    int mkrc = system(mkcmd.c_str());
+
+    // cleanup
+    system(("rm -rf " + tmpdir).c_str());
+
+    if (mkrc != 0) {
+        std::cerr << "makepkg failed for " << package << " (code " << mkrc << ")\n";
+        return 4;
+    }
+
+    std::cout << "Built and installed " << package << " from mirror branch.\n";
+    return 0;
+}
+
+
 int main(int argc, char **argv) {
   if (argc < 2) {
-    cout << "Usage: auh <install|remove|update> [packages...]\n";
+    cout << "Usage: auh <install|installg|remove|update|clean> [packages...]\n";
     return 1;
   }
 
@@ -144,6 +215,15 @@ int main(int argc, char **argv) {
       string pkg = argv[i];
       string url = "https://aur.archlinux.org/" + pkg + ".git";
       install_pkg(pkg, url);
+    }
+  } else if (cmd == "installg") {
+    if (argc < 3) {
+      cout << "Usage: auh installg <packages...>\n";
+      return 1;
+    }
+    for (int i = 2; i < argc; ++i) {
+      string pkg = argv[i];
+      build_from_github(pkg);
     }
   } else if (cmd == "remove") {
     if (argc < 3) {
@@ -164,7 +244,7 @@ int main(int argc, char **argv) {
     clean_cache();
   } else {
     cout << "Unknown command: " << cmd
-         << "\nUsage: auh <install|remove|update> [packages...]\n";
+         << "\nUsage: auh <install|installg|remove|update|clean> [packages...]\n";
     return 1;
   }
 
