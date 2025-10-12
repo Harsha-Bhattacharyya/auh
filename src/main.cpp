@@ -131,69 +131,18 @@ int build_from_github(
     const std::string &package,
     const std::string &mirror_url_base = "https://github.com/archlinux/aur") {
   // tmp working dir
-  const std::string tmpdir = "/tmp/auh_mirror_" + package;
+  const std::string tmpdir = "./auh_mirror_" + package;
   // ensure clean tmpdir
   std::string rm = "rm -rf " + tmpdir;
   system(rm.c_str());
 
   // clone mirror (shallow, no tags) into tmpdir
-  std::string clone_cmd = "git clone --depth=1 " + mirror_url_base + ".git " +
+  std::string clone_cmd = "git clone --bare --single-branch --branch " +
+                          package + "--depth=1 " + mirror_url_base + ".git " +
                           tmpdir + " 2>/dev/null";
   if (system(clone_cmd.c_str()) != 0) {
     std::cerr << "Failed to clone mirror for " << package << '\n';
     return 1;
-  }
-
-  // list remote branches (use git ls-remote --heads)
-  std::string ls_cmd =
-      "git -C " + tmpdir + " ls-remote --heads origin " + package +
-      " | awk '{print $2}' | sed 's@refs/heads/@@' 2>/dev/null";
-  // capture output
-  std::array<char, 4096> buf;
-  std::string branches;
-  std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(ls_cmd.c_str(), "r"),
-                                                pclose);
-  if (!pipe) {
-    std::cerr << "Failed to list branches for " << package << '\n';
-    system(("rm -rf " + tmpdir).c_str());
-    return 1;
-  }
-  while (fgets(buf.data(), buf.size(), pipe.get()))
-    branches += buf.data();
-  // trim whitespace/newlines
-  while (!branches.empty() && isspace((unsigned char)branches.back()))
-    branches.pop_back();
-
-  // check if branch equal to package exists
-  bool found = false;
-  size_t pos = 0;
-  while (pos < branches.size()) {
-    size_t nl = branches.find('\n', pos);
-    std::string b = (nl == std::string::npos) ? branches.substr(pos)
-                                              : branches.substr(pos, nl - pos);
-    if (b == package) {
-      found = true;
-      break;
-    }
-    if (nl == std::string::npos)
-      break;
-    pos = nl + 1;
-  }
-
-  if (!found) {
-    std::cerr << "No branch named '" << package << "' in mirror; aborting.\n";
-    system(("rm -rf " + tmpdir).c_str());
-    return 2;
-  }
-
-  // checkout that branch
-  std::string checkout = "git -C " + tmpdir + " fetch origin " + package +
-                         " && git -C " + tmpdir + " checkout " + package +
-                         " 2>/dev/null";
-  if (system(checkout.c_str()) != 0) {
-    std::cerr << "Failed to checkout branch " << package << '\n';
-    system(("rm -rf " + tmpdir).c_str());
-    return 3;
   }
 
   // run makepkg in tmpdir (as normal user). Use --noconfirm and skip PGP if
@@ -214,6 +163,30 @@ int build_from_github(
   return 0;
 }
 
+bool is_aur_up() {
+  const std::string url = "https://aur.archlinux.org";
+
+  // Get HTTP status code
+  std::string curl_cmd = "curl -s -o /dev/null -w \"%{http_code}\" " + url;
+  std::string http_code_str = run_capture(curl_cmd);
+
+  int http_code = 0;
+  try {
+    http_code = std::stoi(http_code_str);
+  } catch (...) {
+    std::cerr << "Failed to get AUR HTTP status code\n";
+    return 1;
+  }
+
+  // Determine status
+  std::string status_text;
+  if (http_code >= 200 && http_code < 400) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
 int main(int argc, char **argv) {
   if (argc < 2) {
     cout << "Usage: auh <install|installg|remove|update|clean> [packages...]\n";
@@ -230,7 +203,10 @@ int main(int argc, char **argv) {
     for (int i = 2; i < argc; ++i) {
       string pkg = argv[i];
       string url = "https://aur.archlinux.org/" + pkg + ".git";
-      install_pkg(pkg, url);
+      if (is_aur_up())
+        install_pkg(pkg, url);
+      else
+        build_from_github(pkg);
     }
   } else if (cmd == "installg") {
     if (argc < 3) {
