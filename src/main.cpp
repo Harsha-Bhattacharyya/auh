@@ -139,7 +139,8 @@ int build_from_github(
   // clone mirror (shallow, no tags) into tmpdir
   std::string clone_cmd = "git clone --bare --single-branch --branch " +
                           package + "--depth=1 " + mirror_url_base + ".git " +
-                          tmpdir + " 2>/dev/null";
+                          tmpdir; 
+    // + " 2>/dev/null";
   if (system(clone_cmd.c_str()) != 0) {
     std::cerr << "Failed to clone mirror for " << package << '\n';
     return 1;
