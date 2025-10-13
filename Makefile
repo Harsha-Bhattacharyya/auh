@@ -1,5 +1,5 @@
 auh: src/main.cpp 
-	g++ -O3 -Wall -Werror -std=c++11 -o auh src/main.cpp
+	g++ -O3 -Wall -std=c++11 -o auh src/main.cpp
 
 install: auh 
 	chmod +x auh 
