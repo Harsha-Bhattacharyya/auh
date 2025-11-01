@@ -5,6 +5,9 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <vector>
+#include <sys/wait.h>
+#include <unistd.h>
 
 using namespace std;
 
@@ -229,6 +232,60 @@ is_aur_up ()
 }
 
 int
+install_packages_parallel (const vector<string> &packages, bool use_aur)
+{
+  // Install packages in parallel using fork
+  vector<pid_t> children;
+  
+  for (const auto &pkg : packages)
+    {
+      pid_t pid = fork ();
+      
+      if (pid == 0)
+        {
+          // Child process
+          string url = "https://aur.archlinux.org/" + pkg + ".git";
+          int result;
+          if (use_aur)
+            result = install_pkg (pkg, url);
+          else
+            result = build_from_github (pkg);
+          exit (result);
+        }
+      else if (pid > 0)
+        {
+          // Parent process - store child PID
+          children.push_back (pid);
+        }
+      else
+        {
+          cerr << "Failed to fork for package: " << pkg << '\n';
+          return 1;
+        }
+    }
+  
+  // Wait for all children to complete
+  int failed_count = 0;
+  for (pid_t pid : children)
+    {
+      int status;
+      waitpid (pid, &status, 0);
+      if (WIFEXITED (status) && WEXITSTATUS (status) != 0)
+        {
+          failed_count++;
+        }
+    }
+  
+  if (failed_count > 0)
+    {
+      cerr << failed_count << " package(s) failed to install.\n";
+      return 1;
+    }
+  
+  return 0;
+}
+
+int
 sync_explicit ()
 {
   // Get list of explicitly installed packages
@@ -305,15 +362,16 @@ main (int argc, char **argv)
         }
       // Check AUR status once before processing packages
       bool aur_available = is_aur_up ();
+      
+      // Collect all packages into a vector
+      vector<string> packages;
       for (int i = 2; i < argc; ++i)
         {
-          string pkg = argv[i];
-          string url = "https://aur.archlinux.org/" + pkg + ".git";
-          if (aur_available)
-            install_pkg (pkg, url);
-          else
-            build_from_github (pkg);
+          packages.push_back (argv[i]);
         }
+      
+      // Install packages in parallel
+      install_packages_parallel (packages, aur_available);
     }
   else if (cmd == "installg")
     {
@@ -322,11 +380,15 @@ main (int argc, char **argv)
           cout << "Usage: auh installg <packages...>\n";
           return 1;
         }
+      // Collect all packages into a vector
+      vector<string> packages;
       for (int i = 2; i < argc; ++i)
         {
-          string pkg = argv[i];
-          build_from_github (pkg);
+          packages.push_back (argv[i]);
         }
+      
+      // Install packages in parallel from GitHub
+      install_packages_parallel (packages, false);
     }
   else if (cmd == "remove")
     {
