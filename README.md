@@ -23,7 +23,15 @@ make install
 ```
 
 ### Usage:
-  auh <install/installg/remove/update/clean> pkg1 pkg2 ...
+  auh <install/installg/remove/update/clean/sync> pkg1 pkg2 ...
+
+  Commands:
+  - install: Install packages from AUR (falls back to GitHub mirror if AUR is down)
+  - installg: Install packages from GitHub mirror
+  - remove: Remove packages
+  - update: Update packages or perform full system upgrade
+  - clean: Clean package cache
+  - sync: List explicitly installed packages that are available in AUR
 
 ### LICENSE:
   GPL-V3 located in COPYING

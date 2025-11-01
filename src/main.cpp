@@ -4,9 +4,28 @@
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <string>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <vector>
 
 using namespace std;
+
+static bool
+is_valid_package_name (const string &name)
+{
+  // Package names should only contain alphanumeric, dash, underscore, dot, and
+  // plus
+  if (name.empty ())
+    return false;
+  for (char c : name)
+    {
+      if (!isalnum (c) && c != '-' && c != '_' && c != '.' && c != '+')
+        return false;
+    }
+  return true;
+}
 
 static string
 run_capture (const string &cmd)
@@ -229,11 +248,151 @@ is_aur_up ()
 }
 
 int
+install_packages_parallel (const vector<string> &packages, bool use_aur)
+{
+  // Install packages in parallel using fork with a limit on concurrent
+  // processes
+  const size_t max_concurrent = 4; // Limit to 4 concurrent installations
+  vector<pid_t> children;
+  size_t pkg_idx = 0;
+  int failed_count = 0;
+
+  while (pkg_idx < packages.size () || !children.empty ())
+    {
+      // Start new processes up to the limit
+      while (pkg_idx < packages.size () && children.size () < max_concurrent)
+        {
+          const string &pkg = packages[pkg_idx];
+
+          // Validate package name before processing
+          if (!is_valid_package_name (pkg))
+            {
+              cerr << "Invalid package name: " << pkg << '\n';
+              failed_count++;
+              pkg_idx++;
+              continue;
+            }
+
+          pid_t pid = fork ();
+
+          if (pid == 0)
+            {
+              // Child process
+              string url = "https://aur.archlinux.org/" + pkg + ".git";
+              int result;
+              if (use_aur)
+                result = install_pkg (pkg, url);
+              else
+                result = build_from_github (pkg);
+              exit (result);
+            }
+          else if (pid > 0)
+            {
+              // Parent process - store child PID
+              children.push_back (pid);
+              pkg_idx++;
+            }
+          else
+            {
+              cerr << "Failed to fork for package: " << pkg << '\n';
+              failed_count++;
+              pkg_idx++;
+            }
+        }
+
+      // Wait for at least one child to complete
+      if (!children.empty ())
+        {
+          int status;
+          pid_t finished = wait (&status);
+          if (finished > 0)
+            {
+              // Remove finished process from children vector
+              children.erase (
+                  remove (children.begin (), children.end (), finished),
+                  children.end ());
+
+              if (WIFEXITED (status) && WEXITSTATUS (status) != 0)
+                {
+                  failed_count++;
+                }
+            }
+        }
+    }
+
+  if (failed_count > 0)
+    {
+      cerr << failed_count << " package(s) failed to install.\n";
+      return 1;
+    }
+
+  return 0;
+}
+
+int
+sync_explicit ()
+{
+  // Get list of explicitly installed packages
+  string cmd = "pacman -Qeq";
+  string explicit_pkgs = run_capture (cmd);
+
+  if (explicit_pkgs.empty ())
+    {
+      cout << "No explicitly installed packages found.\n";
+      return 0;
+    }
+
+  cout << "Checking explicitly installed packages against AUR...\n";
+
+  // Parse packages using stringstream for cleaner parsing
+  istringstream stream (explicit_pkgs);
+  string pkg;
+  int synced_count = 0;
+
+  while (getline (stream, pkg))
+    {
+      // Trim any trailing whitespace
+      while (!pkg.empty () && isspace ((unsigned char)pkg.back ()))
+        pkg.pop_back ();
+
+      if (pkg.empty ())
+        continue;
+
+      // Validate package name
+      if (!is_valid_package_name (pkg))
+        {
+          cerr << "Skipping invalid package name: " << pkg << '\n';
+          continue;
+        }
+
+      // Check if package exists in AUR
+      string pcmd = "curl -s "
+                    "\"https://aur.archlinux.org/rpc/?v=5&type=info&arg="
+                    + pkg + "\" | jq -r '.results | length'";
+      string result = run_capture (pcmd);
+
+      // Trim whitespace
+      while (!result.empty () && isspace ((unsigned char)result.back ()))
+        result.pop_back ();
+
+      if (result == "1")
+        {
+          cout << "Found AUR package: " << pkg << "\n";
+          synced_count++;
+        }
+    }
+
+  cout << "Total AUR packages found in explicitly installed: " << synced_count
+       << "\n";
+  return 0;
+}
+
+int
 main (int argc, char **argv)
 {
   if (argc < 2)
     {
-      cout << "Usage: auh <install|installg|remove|update|clean> "
+      cout << "Usage: auh <install|installg|remove|update|clean|sync> "
               "[packages...]\n";
       return 1;
     }
@@ -247,15 +406,18 @@ main (int argc, char **argv)
           cout << "Usage: auh install <packages...>\n";
           return 1;
         }
+      // Check AUR status once before processing packages
+      bool aur_available = is_aur_up ();
+
+      // Collect all packages into a vector
+      vector<string> packages;
       for (int i = 2; i < argc; ++i)
         {
-          string pkg = argv[i];
-          string url = "https://aur.archlinux.org/" + pkg + ".git";
-          if (is_aur_up ())
-            install_pkg (pkg, url);
-          else
-            build_from_github (pkg);
+          packages.push_back (argv[i]);
         }
+
+      // Install packages in parallel
+      install_packages_parallel (packages, aur_available);
     }
   else if (cmd == "installg")
     {
@@ -264,11 +426,15 @@ main (int argc, char **argv)
           cout << "Usage: auh installg <packages...>\n";
           return 1;
         }
+      // Collect all packages into a vector
+      vector<string> packages;
       for (int i = 2; i < argc; ++i)
         {
-          string pkg = argv[i];
-          build_from_github (pkg);
+          packages.push_back (argv[i]);
         }
+
+      // Install packages in parallel from GitHub
+      install_packages_parallel (packages, false);
     }
   else if (cmd == "remove")
     {
@@ -297,10 +463,14 @@ main (int argc, char **argv)
     {
       clean_cache ();
     }
+  else if (cmd == "sync")
+    {
+      sync_explicit ();
+    }
   else
     {
       cout << "Unknown command: " << cmd
-           << "\nUsage: auh <install|installg|remove|update|clean> "
+           << "\nUsage: auh <install|installg|remove|update|clean|sync> "
               "[packages...]\n";
       return 1;
     }
