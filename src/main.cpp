@@ -4,12 +4,28 @@
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <sys/wait.h>
 #include <unistd.h>
 #include <vector>
 
 using namespace std;
+
+static bool
+is_valid_package_name (const string &name)
+{
+  // Package names should only contain alphanumeric, dash, underscore, dot, and
+  // plus
+  if (name.empty ())
+    return false;
+  for (char c : name)
+    {
+      if (!isalnum (c) && c != '-' && c != '_' && c != '.' && c != '+')
+        return false;
+    }
+  return true;
+}
 
 static string
 run_capture (const string &cmd)
@@ -234,45 +250,73 @@ is_aur_up ()
 int
 install_packages_parallel (const vector<string> &packages, bool use_aur)
 {
-  // Install packages in parallel using fork
+  // Install packages in parallel using fork with a limit on concurrent
+  // processes
+  const size_t max_concurrent = 4; // Limit to 4 concurrent installations
   vector<pid_t> children;
-
-  for (const auto &pkg : packages)
-    {
-      pid_t pid = fork ();
-
-      if (pid == 0)
-        {
-          // Child process
-          string url = "https://aur.archlinux.org/" + pkg + ".git";
-          int result;
-          if (use_aur)
-            result = install_pkg (pkg, url);
-          else
-            result = build_from_github (pkg);
-          exit (result);
-        }
-      else if (pid > 0)
-        {
-          // Parent process - store child PID
-          children.push_back (pid);
-        }
-      else
-        {
-          cerr << "Failed to fork for package: " << pkg << '\n';
-          return 1;
-        }
-    }
-
-  // Wait for all children to complete
+  size_t pkg_idx = 0;
   int failed_count = 0;
-  for (pid_t pid : children)
+
+  while (pkg_idx < packages.size () || !children.empty ())
     {
-      int status;
-      waitpid (pid, &status, 0);
-      if (WIFEXITED (status) && WEXITSTATUS (status) != 0)
+      // Start new processes up to the limit
+      while (pkg_idx < packages.size () && children.size () < max_concurrent)
         {
-          failed_count++;
+          const string &pkg = packages[pkg_idx];
+
+          // Validate package name before processing
+          if (!is_valid_package_name (pkg))
+            {
+              cerr << "Invalid package name: " << pkg << '\n';
+              failed_count++;
+              pkg_idx++;
+              continue;
+            }
+
+          pid_t pid = fork ();
+
+          if (pid == 0)
+            {
+              // Child process
+              string url = "https://aur.archlinux.org/" + pkg + ".git";
+              int result;
+              if (use_aur)
+                result = install_pkg (pkg, url);
+              else
+                result = build_from_github (pkg);
+              exit (result);
+            }
+          else if (pid > 0)
+            {
+              // Parent process - store child PID
+              children.push_back (pid);
+              pkg_idx++;
+            }
+          else
+            {
+              cerr << "Failed to fork for package: " << pkg << '\n';
+              failed_count++;
+              pkg_idx++;
+            }
+        }
+
+      // Wait for at least one child to complete
+      if (!children.empty ())
+        {
+          int status;
+          pid_t finished = wait (&status);
+          if (finished > 0)
+            {
+              // Remove finished process from children vector
+              children.erase (
+                  remove (children.begin (), children.end (), finished),
+                  children.end ());
+
+              if (WIFEXITED (status) && WEXITSTATUS (status) != 0)
+                {
+                  failed_count++;
+                }
+            }
         }
     }
 
@@ -300,43 +344,41 @@ sync_explicit ()
 
   cout << "Checking explicitly installed packages against AUR...\n";
 
-  // Split packages by newline
+  // Parse packages using stringstream for cleaner parsing
+  istringstream stream (explicit_pkgs);
   string pkg;
   int synced_count = 0;
 
-  for (size_t i = 0; i < explicit_pkgs.size (); ++i)
+  while (getline (stream, pkg))
     {
-      if (explicit_pkgs[i] == '\n' || i == explicit_pkgs.size () - 1)
-        {
-          if (i == explicit_pkgs.size () - 1 && explicit_pkgs[i] != '\n')
-            pkg += explicit_pkgs[i];
+      // Trim any trailing whitespace
+      while (!pkg.empty () && isspace ((unsigned char)pkg.back ()))
+        pkg.pop_back ();
 
-          if (!pkg.empty ())
-            {
-              // Check if package exists in AUR
-              string pcmd
-                  = "curl -s "
+      if (pkg.empty ())
+        continue;
+
+      // Validate package name
+      if (!is_valid_package_name (pkg))
+        {
+          cerr << "Skipping invalid package name: " << pkg << '\n';
+          continue;
+        }
+
+      // Check if package exists in AUR
+      string pcmd = "curl -s "
                     "\"https://aur.archlinux.org/rpc/?v=5&type=info&arg="
                     + pkg + "\" | jq -r '.results | length'";
-              string result = run_capture (pcmd);
+      string result = run_capture (pcmd);
 
-              // Trim whitespace
-              while (!result.empty ()
-                     && isspace ((unsigned char)result.back ()))
-                result.pop_back ();
+      // Trim whitespace
+      while (!result.empty () && isspace ((unsigned char)result.back ()))
+        result.pop_back ();
 
-              if (result == "1")
-                {
-                  cout << "Found AUR package: " << pkg << "\n";
-                  synced_count++;
-                }
-
-              pkg.clear ();
-            }
-        }
-      else
+      if (result == "1")
         {
-          pkg += explicit_pkgs[i];
+          cout << "Found AUR package: " << pkg << "\n";
+          synced_count++;
         }
     }
 
