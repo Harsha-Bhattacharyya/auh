@@ -5,9 +5,9 @@
 #include <iostream>
 #include <memory>
 #include <string>
-#include <vector>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <vector>
 
 using namespace std;
 
@@ -236,11 +236,11 @@ install_packages_parallel (const vector<string> &packages, bool use_aur)
 {
   // Install packages in parallel using fork
   vector<pid_t> children;
-  
+
   for (const auto &pkg : packages)
     {
       pid_t pid = fork ();
-      
+
       if (pid == 0)
         {
           // Child process
@@ -263,7 +263,7 @@ install_packages_parallel (const vector<string> &packages, bool use_aur)
           return 1;
         }
     }
-  
+
   // Wait for all children to complete
   int failed_count = 0;
   for (pid_t pid : children)
@@ -275,13 +275,13 @@ install_packages_parallel (const vector<string> &packages, bool use_aur)
           failed_count++;
         }
     }
-  
+
   if (failed_count > 0)
     {
       cerr << failed_count << " package(s) failed to install.\n";
       return 1;
     }
-  
+
   return 0;
 }
 
@@ -291,43 +291,46 @@ sync_explicit ()
   // Get list of explicitly installed packages
   string cmd = "pacman -Qeq";
   string explicit_pkgs = run_capture (cmd);
-  
+
   if (explicit_pkgs.empty ())
     {
       cout << "No explicitly installed packages found.\n";
       return 0;
     }
-  
+
   cout << "Checking explicitly installed packages against AUR...\n";
-  
+
   // Split packages by newline
   string pkg;
   int synced_count = 0;
-  
+
   for (size_t i = 0; i < explicit_pkgs.size (); ++i)
     {
       if (explicit_pkgs[i] == '\n' || i == explicit_pkgs.size () - 1)
         {
           if (i == explicit_pkgs.size () - 1 && explicit_pkgs[i] != '\n')
             pkg += explicit_pkgs[i];
-            
+
           if (!pkg.empty ())
             {
               // Check if package exists in AUR
-              string pcmd = "curl -s \"https://aur.archlinux.org/rpc/?v=5&type=info&arg="
-                            + pkg + "\" | jq -r '.results | length'";
+              string pcmd
+                  = "curl -s "
+                    "\"https://aur.archlinux.org/rpc/?v=5&type=info&arg="
+                    + pkg + "\" | jq -r '.results | length'";
               string result = run_capture (pcmd);
-              
+
               // Trim whitespace
-              while (!result.empty () && isspace ((unsigned char)result.back ()))
+              while (!result.empty ()
+                     && isspace ((unsigned char)result.back ()))
                 result.pop_back ();
-              
+
               if (result == "1")
                 {
                   cout << "Found AUR package: " << pkg << "\n";
                   synced_count++;
                 }
-              
+
               pkg.clear ();
             }
         }
@@ -336,8 +339,9 @@ sync_explicit ()
           pkg += explicit_pkgs[i];
         }
     }
-  
-  cout << "Total AUR packages found in explicitly installed: " << synced_count << "\n";
+
+  cout << "Total AUR packages found in explicitly installed: " << synced_count
+       << "\n";
   return 0;
 }
 
@@ -362,14 +366,14 @@ main (int argc, char **argv)
         }
       // Check AUR status once before processing packages
       bool aur_available = is_aur_up ();
-      
+
       // Collect all packages into a vector
       vector<string> packages;
       for (int i = 2; i < argc; ++i)
         {
           packages.push_back (argv[i]);
         }
-      
+
       // Install packages in parallel
       install_packages_parallel (packages, aur_available);
     }
@@ -386,7 +390,7 @@ main (int argc, char **argv)
         {
           packages.push_back (argv[i]);
         }
-      
+
       // Install packages in parallel from GitHub
       install_packages_parallel (packages, false);
     }
