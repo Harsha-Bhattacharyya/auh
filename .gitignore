@@ -40,3 +40,4 @@
 # debug information files
 *.dwo
 auh
+_codeql_detected_source_root
