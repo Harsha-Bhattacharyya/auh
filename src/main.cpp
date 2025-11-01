@@ -229,11 +229,67 @@ is_aur_up ()
 }
 
 int
+sync_explicit ()
+{
+  // Get list of explicitly installed packages
+  string cmd = "pacman -Qeq";
+  string explicit_pkgs = run_capture (cmd);
+  
+  if (explicit_pkgs.empty ())
+    {
+      cout << "No explicitly installed packages found.\n";
+      return 0;
+    }
+  
+  cout << "Checking explicitly installed packages against AUR...\n";
+  
+  // Split packages by newline
+  string pkg;
+  int synced_count = 0;
+  
+  for (size_t i = 0; i < explicit_pkgs.size (); ++i)
+    {
+      if (explicit_pkgs[i] == '\n' || i == explicit_pkgs.size () - 1)
+        {
+          if (i == explicit_pkgs.size () - 1 && explicit_pkgs[i] != '\n')
+            pkg += explicit_pkgs[i];
+            
+          if (!pkg.empty ())
+            {
+              // Check if package exists in AUR
+              string pcmd = "curl -s \"https://aur.archlinux.org/rpc/?v=5&type=info&arg="
+                            + pkg + "\" | jq -r '.results | length'";
+              string result = run_capture (pcmd);
+              
+              // Trim whitespace
+              while (!result.empty () && isspace ((unsigned char)result.back ()))
+                result.pop_back ();
+              
+              if (result == "1")
+                {
+                  cout << "Found AUR package: " << pkg << "\n";
+                  synced_count++;
+                }
+              
+              pkg.clear ();
+            }
+        }
+      else
+        {
+          pkg += explicit_pkgs[i];
+        }
+    }
+  
+  cout << "Total AUR packages found in explicitly installed: " << synced_count << "\n";
+  return 0;
+}
+
+int
 main (int argc, char **argv)
 {
   if (argc < 2)
     {
-      cout << "Usage: auh <install|installg|remove|update|clean> "
+      cout << "Usage: auh <install|installg|remove|update|clean|sync> "
               "[packages...]\n";
       return 1;
     }
@@ -247,11 +303,13 @@ main (int argc, char **argv)
           cout << "Usage: auh install <packages...>\n";
           return 1;
         }
+      // Check AUR status once before processing packages
+      bool aur_available = is_aur_up ();
       for (int i = 2; i < argc; ++i)
         {
           string pkg = argv[i];
           string url = "https://aur.archlinux.org/" + pkg + ".git";
-          if (is_aur_up ())
+          if (aur_available)
             install_pkg (pkg, url);
           else
             build_from_github (pkg);
@@ -297,10 +355,14 @@ main (int argc, char **argv)
     {
       clean_cache ();
     }
+  else if (cmd == "sync")
+    {
+      sync_explicit ();
+    }
   else
     {
       cout << "Unknown command: " << cmd
-           << "\nUsage: auh <install|installg|remove|update|clean> "
+           << "\nUsage: auh <install|installg|remove|update|clean|sync> "
               "[packages...]\n";
       return 1;
     }
