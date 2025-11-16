@@ -1,0 +1,129 @@
+.TH AUH 1 "November 2025" "auh 1.0" "User Commands"
+.SH NAME
+auh \- Arch User Helper for AUR package management
+.SH SYNOPSIS
+.B auh
+.I command
+.RI [ packages... ]
+.SH DESCRIPTION
+.B auh
+(Arch User Helper) is a modern, lightweight AUR helper designed for Arch Linux. It provides a simple command-line interface for managing AUR packages with minimal dependencies and fast compile times.
+.PP
+The tool features automatic fallback to GitHub mirrors when the AUR is unavailable, parallel package installation for improved performance, and an APT-like command interface for ease of use.
+.SH COMMANDS
+.TP
+.B install
+Install packages from AUR. Automatically falls back to GitHub mirror if AUR is down.
+.TP
+.B installg
+Install packages directly from GitHub mirror.
+.TP
+.B remove
+Remove installed packages.
+.TP
+.B update
+Update packages. If no package is specified, performs a full system upgrade.
+.TP
+.B clean
+Clean the package cache.
+.TP
+.B sync
+List explicitly installed packages that are available in AUR.
+.SH OPTIONS
+.TP
+.I packages...
+One or more package names to process. Package names should contain only alphanumeric characters, dashes, underscores, dots, and plus signs.
+.SH EXAMPLES
+.TP
+.B auh install yay
+Install the 'yay' package from AUR.
+.TP
+.B auh install yay pikaur
+Install multiple packages in parallel.
+.TP
+.B auh installg package-name
+Install a package directly from GitHub mirror.
+.TP
+.B auh remove yay
+Remove the 'yay' package.
+.TP
+.B auh update
+Perform a full system upgrade.
+.TP
+.B auh update package-name
+Update a specific package.
+.TP
+.B auh clean
+Clean the package cache.
+.TP
+.B auh sync
+List explicitly installed AUR packages.
+.SH DEPENDENCIES
+.B auh
+requires the following dependencies:
+.IP \[bu] 2
+.B curl
+\- for downloading data from AUR and GitHub
+.IP \[bu]
+.B git
+\- for cloning package repositories
+.IP \[bu]
+.B jq
+\- for JSON parsing
+.IP \[bu]
+.B base-devel
+\- for building packages (includes makepkg)
+.SH FILES
+.TP
+.I /tmp/auh_*
+Temporary directories used for building and updating packages.
+.TP
+.I /tmp/auh_mirror_*
+Temporary directories used when installing from GitHub mirrors.
+.SH ENVIRONMENT
+.B auh
+uses the following system tools and respects their environment variables:
+.IP \[bu] 2
+.BR pacman (8)
+.IP \[bu]
+.BR makepkg (8)
+.IP \[bu]
+.BR git (1)
+.SH EXIT STATUS
+.TP
+.B 0
+Success
+.TP
+.B 1
+General error (invalid command, package not found, build failure, etc.)
+.TP
+.B 4
+Build failure when installing from GitHub mirror
+.SH SECURITY CONSIDERATIONS
+.IP \[bu] 2
+Always review PKGBUILDs before installing packages from AUR
+.IP \[bu]
+The tool requires sudo privileges for certain operations
+.IP \[bu]
+Package names are validated to prevent command injection
+.IP \[bu]
+Network operations use HTTPS for secure communication
+.SH BUGS
+Report bugs to: https://github.com/Harsha-Bhattacharyya/auh/issues
+.SH AUTHOR
+Written by Harsha Bhattacharyya.
+.SH COPYRIGHT
+Copyright \(co 2024 Harsha Bhattacharyya.
+.br
+License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
+.br
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+.SH SEE ALSO
+.BR pacman (8),
+.BR makepkg (8),
+.BR git (1)
+.PP
+AUR website: https://aur.archlinux.org/
+.PP
+Project homepage: https://github.com/Harsha-Bhattacharyya/auh

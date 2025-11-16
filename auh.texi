@@ -1,0 +1,404 @@
+\input texinfo   @c -*-texinfo-*-
+@c %**start of header
+@setfilename auh.info
+@settitle auh - Arch User Helper Manual
+@documentencoding UTF-8
+@c %**end of header
+
+@copying
+This manual is for auh (Arch User Helper), version 1.0.
+
+Copyright @copyright{} 2024 Harsha Bhattacharyya.
+
+@quotation
+Permission is granted to copy, distribute and/or modify this document
+under the terms of the GNU General Public License, Version 3 or any
+later version published by the Free Software Foundation.
+@end quotation
+@end copying
+
+@titlepage
+@title auh - Arch User Helper
+@subtitle A modern AUR helper for Arch Linux
+@author Harsha Bhattacharyya
+
+@page
+@vskip 0pt plus 1filll
+@insertcopying
+@end titlepage
+
+@contents
+
+@ifnottex
+@node Top
+@top auh - Arch User Helper
+
+This manual documents auh (Arch User Helper), a modern AUR helper for Arch Linux.
+
+@insertcopying
+@end ifnottex
+
+@menu
+* Introduction::        Overview of auh
+* Installation::        How to install auh
+* Usage::               Using auh commands
+* Commands::            Detailed command reference
+* Features::            Key features of auh
+* Dependencies::        Required dependencies
+* Security::            Security considerations
+* Contributing::        How to contribute
+* License::             Licensing information
+@end menu
+
+@node Introduction
+@chapter Introduction
+
+@cindex introduction
+@cindex AUR helper
+@cindex Arch User Repository
+
+auh (short for Arch User Helper) is a modern AUR helper designed to make
+installing and managing packages from the Arch User Repository simple and
+efficient.
+
+Key highlights:
+@itemize @bullet
+@item Tiny codebase for easier modification and bug tracking
+@item Minimal dependencies
+@item GitHub mirror support for AUR DDOS situations
+@item Fast compile times
+@item CLI interface similar to apt for easier use
+@item Parallel package installation support
+@end itemize
+
+@node Installation
+@chapter Installation
+
+@section Building from Source
+
+To install auh from source:
+
+@example
+git clone https://github.com/Harsha-Bhattacharyya/auh.git
+cd auh/
+make install
+@end example
+
+This will:
+@enumerate
+@item Compile the C++ source code
+@item Make the binary executable
+@item Install it to @file{/usr/bin/auh}
+@end enumerate
+
+@section Requirements
+
+Before installing, ensure you have these dependencies:
+@itemize @bullet
+@item @command{curl} - for network operations
+@item @command{git} - for cloning repositories
+@item @command{jq} - for JSON parsing
+@item @command{base-devel} - for building packages
+@item A C++ compiler (g++)
+@end itemize
+
+@node Usage
+@chapter Usage
+
+@section Basic Syntax
+
+The general syntax for auh is:
+
+@example
+auh <command> [packages...]
+@end example
+
+where @var{command} is one of the available commands and @var{packages} is
+an optional list of package names.
+
+@section Quick Start
+
+Install a package:
+@example
+auh install yay
+@end example
+
+Install multiple packages:
+@example
+auh install yay pikaur
+@end example
+
+Update your system:
+@example
+auh update
+@end example
+
+Remove a package:
+@example
+auh remove yay
+@end example
+
+@node Commands
+@chapter Commands
+
+@section install
+
+@cindex install command
+@example
+auh install <packages...>
+@end example
+
+Install one or more packages from AUR. If the AUR is unavailable, automatically
+falls back to GitHub mirror.
+
+The install command:
+@itemize @bullet
+@item Validates package names
+@item Checks if packages are already installed
+@item Queries the AUR for package information
+@item Clones the package repository
+@item Builds the package using makepkg
+@item Installs the built package
+@item Supports parallel installation of multiple packages
+@end itemize
+
+@section installg
+
+@cindex installg command
+@example
+auh installg <packages...>
+@end example
+
+Install packages directly from GitHub mirror, bypassing the AUR. Useful when:
+@itemize @bullet
+@item The AUR is experiencing issues
+@item You prefer to use the GitHub mirror
+@item Testing mirror functionality
+@end itemize
+
+@section remove
+
+@cindex remove command
+@example
+auh remove <packages...>
+@end example
+
+Remove one or more installed packages using pacman. This command:
+@itemize @bullet
+@item Checks if the package is installed
+@item Removes the package and its dependencies
+@item Removes configuration files (using -Rsn flags)
+@end itemize
+
+@section update
+
+@cindex update command
+@example
+auh update [packages...]
+@end example
+
+Update packages or perform a full system upgrade.
+
+@itemize @bullet
+@item Without arguments: performs a full system upgrade
+@item With package names: updates specified packages
+@item For AUR packages: rebuilds from source
+@item For repository packages: updates via pacman
+@end itemize
+
+@section clean
+
+@cindex clean command
+@example
+auh clean
+@end example
+
+Clean the package cache by running @command{pacman -Scc}.
+
+@section sync
+
+@cindex sync command
+@example
+auh sync
+@end example
+
+List all explicitly installed packages that are available in the AUR.
+Useful for:
+@itemize @bullet
+@item Identifying which packages came from AUR
+@item Auditing your installed packages
+@item Managing your package list
+@end itemize
+
+@node Features
+@chapter Features
+
+@section Parallel Installation
+
+auh can install multiple packages in parallel, improving installation speed.
+The maximum number of concurrent installations is limited to 4 to prevent
+system overload.
+
+@section AUR Fallback
+
+When the AUR is unavailable, auh automatically attempts to use GitHub mirrors,
+ensuring you can continue installing packages even during AUR downtime.
+
+@section Package Name Validation
+
+All package names are validated before processing to prevent command injection
+and ensure security.
+
+@section Error Handling
+
+Comprehensive error handling provides clear messages when operations fail,
+including:
+@itemize @bullet
+@item Package not found
+@item Build failures
+@item Network issues
+@item Permission problems
+@end itemize
+
+@node Dependencies
+@chapter Dependencies
+
+@section Runtime Dependencies
+
+auh requires these tools at runtime:
+
+@table @command
+@item curl
+Used for querying the AUR API and downloading data
+@item git
+Required for cloning package repositories
+@item jq
+JSON processor for parsing AUR API responses
+@item makepkg
+Part of base-devel, used for building packages
+@item pacman
+Arch Linux package manager
+@end table
+
+@section Build Dependencies
+
+To build auh from source, you need:
+
+@table @command
+@item g++
+C++ compiler with C++11 support
+@item make
+Build automation tool
+@end table
+
+@node Security
+@chapter Security
+
+@section Security Considerations
+
+When using auh, keep these security practices in mind:
+
+@enumerate
+@item Always review PKGBUILDs before installation
+@item Package names are validated to prevent injection attacks
+@item The tool uses HTTPS for all network communications
+@item Sudo access is only requested when necessary
+@item Temporary directories are used for building packages
+@end enumerate
+
+@section Package Verification
+
+Before installing any AUR package:
+@itemize @bullet
+@item Check the package comments on the AUR website
+@item Review the PKGBUILD file
+@item Verify the package maintainer
+@item Check for any security warnings
+@end itemize
+
+@section Reporting Vulnerabilities
+
+Security issues should be reported to:
+@email{harshabhattacharyya510@@duck.com}
+
+@node Contributing
+@chapter Contributing
+
+@section How to Contribute
+
+Contributions are welcome! You can contribute by:
+
+@itemize @bullet
+@item Reporting bugs
+@item Suggesting enhancements
+@item Submitting pull requests
+@item Improving documentation
+@item Testing new features
+@end itemize
+
+@section Development
+
+@subsection Building for Development
+@example
+make
+@end example
+
+@subsection Code Formatting
+@example
+make format
+@end example
+
+@subsection Code Linting
+@example
+make lint
+@end example
+
+@section Coding Standards
+
+@itemize @bullet
+@item Follow GNU C++ coding style
+@item Write clear, descriptive comments
+@item Keep functions small and focused
+@item Validate all user inputs
+@item Handle errors gracefully
+@end itemize
+
+See the CONTRIBUTING.md file for detailed guidelines.
+
+@node License
+@chapter License
+
+@cindex license
+@cindex GPL
+
+auh is free software licensed under the GNU General Public License version 3
+or later.
+
+Copyright @copyright{} 2024 Harsha Bhattacharyya.
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program. If not, see @url{https://www.gnu.org/licenses/}.
+
+@section Contact
+
+@table @asis
+@item Email
+@email{harshabhattacharyya510@@duck.com}
+
+@item GitHub
+@url{https://github.com/Harsha-Bhattacharyya/auh}
+
+@item Issues
+@url{https://github.com/Harsha-Bhattacharyya/auh/issues}
+@end table
+
+@bye

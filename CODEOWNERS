@@ -1,0 +1,16 @@
+# Code Owners for auh repository
+# These owners will be automatically requested for review when someone opens a pull request.
+
+# Global owner
+* @Harsha-Bhattacharyya
+
+# Source code
+/src/ @Harsha-Bhattacharyya
+
+# Documentation
+*.md @Harsha-Bhattacharyya
+*.texi @Harsha-Bhattacharyya
+*.1 @Harsha-Bhattacharyya
+
+# Build system
+Makefile @Harsha-Bhattacharyya
