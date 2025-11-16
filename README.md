@@ -1,5 +1,11 @@
 # Auh
 
+## 🎯 Hack This Fall 2025
+
+This project is participating in **Hack This Fall 2025**! We welcome hackers and contributors to explore, improve, and build upon this modern AUR helper. Whether you're fixing bugs, adding features, or improving documentation, your contributions are valuable!
+
+---
+
 auh (short for Arch User Helper) is a modern AUR helper.
 
 ### Features:
