@@ -4,19 +4,17 @@ auh \- Arch User Helper for AUR package management
 .SH SYNOPSIS
 .B auh
 .I command
+.RI [ options ]
 .RI [ packages... ]
 .SH DESCRIPTION
 .B auh
 (Arch User Helper) is a modern, lightweight AUR helper designed for Arch Linux. It provides a simple command-line interface for managing AUR packages with minimal dependencies and fast compile times.
 .PP
-The tool features automatic fallback to GitHub mirrors when the AUR is unavailable, parallel package installation for improved performance, and an APT-like command interface for ease of use.
+The tool features automatic fallback to GitHub mirrors when the AUR is unavailable, parallel package installation for improved performance, and an APT-like command interface with getopts support for ease of use.
 .SH COMMANDS
 .TP
 .B install
 Install packages from AUR. Automatically falls back to GitHub mirror if AUR is down.
-.TP
-.B installg
-Install packages directly from GitHub mirror.
 .TP
 .B remove
 Remove installed packages.
@@ -30,6 +28,15 @@ Clean the package cache.
 .B sync
 List explicitly installed packages that are available in AUR.
 .SH OPTIONS
+.SS Install Options
+.TP
+.BR \-g ", " \-\-github
+Install packages directly from GitHub mirror instead of AUR.
+.SS Remove Options
+.TP
+.BR \-s ", " \-\-autoremove
+Also remove dependencies that are not required by other packages (pacman -Rsn instead of -R).
+.SS Package Arguments
 .TP
 .I packages...
 One or more package names to process. Package names should contain only alphanumeric characters, dashes, underscores, dots, and plus signs.
@@ -41,11 +48,20 @@ Install the 'yay' package from AUR.
 .B auh install yay pikaur
 Install multiple packages in parallel.
 .TP
-.B auh installg package-name
-Install a package directly from GitHub mirror.
+.B auh install \-g package-name
+Install a package directly from GitHub mirror using the -g flag.
+.TP
+.B auh install \-\-github package-name
+Install a package directly from GitHub mirror using the --github flag.
 .TP
 .B auh remove yay
-Remove the 'yay' package.
+Remove the 'yay' package (uses pacman -R).
+.TP
+.B auh remove \-s yay
+Remove the 'yay' package and its dependencies (uses pacman -Rsn).
+.TP
+.B auh remove \-\-autoremove yay
+Remove the 'yay' package and its dependencies using the long option form.
 .TP
 .B auh update
 Perform a full system upgrade.
