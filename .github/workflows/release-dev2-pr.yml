@@ -1,0 +1,99 @@
+name: Dev Release 2 - PR Merge
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  dev-release:
+    name: Create Dev Release (PR Merge)
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential curl git jq texinfo
+    
+    - name: Generate version
+      id: version
+      run: |
+        # Generate version from PR info
+        PR_NUMBER=${{ github.event.pull_request.number }}
+        SHORT_SHA=$(git rev-parse --short HEAD)
+        VERSION="dev-pr${PR_NUMBER}-${SHORT_SHA}"
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
+        echo "Dev version: ${VERSION}"
+    
+    - name: Build auh
+      run: |
+        make clean
+        make
+        strip auh
+    
+    - name: Build documentation
+      run: |
+        make docs
+    
+    - name: Create release package
+      run: |
+        mkdir -p release-assets
+        cp auh release-assets/
+        cp auh.1 release-assets/
+        cp auh.info release-assets/
+        cp auh.html release-assets/
+        cp README.md release-assets/
+        cp COPYING release-assets/
+        tar -czf auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz -C release-assets .
+        sha256sum auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz > auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz.sha256
+    
+    - name: Delete existing dev-pr release
+      run: |
+        gh release delete dev-pr --yes || true
+        git push origin :refs/tags/dev-pr || true
+      env:
+        GH_TOKEN: ${{ github.token }}
+    
+    - name: Create/Update Dev Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: dev-pr
+        name: Dev Release (PR Merge) - ${{ steps.version.outputs.version }}
+        body: |
+          ## Development Build from PR Merge
+          
+          **Version:** ${{ steps.version.outputs.version }}
+          **PR:** #${{ github.event.pull_request.number }} - ${{ github.event.pull_request.title }}
+          **Merged by:** @${{ github.event.pull_request.merged_by.login }}
+          **Commit:** ${{ github.sha }}
+          **Built:** ${{ github.event.pull_request.merged_at }}
+          
+          ### ⚠️ Warning
+          This is an automated development build created after a PR merge. 
+          It may contain unstable features and should be used for testing only.
+          
+          ### PR Description
+          ${{ github.event.pull_request.body }}
+          
+          ### Installation
+          ```bash
+          wget https://github.com/${{ github.repository }}/releases/download/dev-pr/auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz
+          tar -xzf auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz
+          sudo install -m 755 auh /usr/bin/
+          ```
+        files: |
+          auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz
+          auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz.sha256
+        draft: false
+        prerelease: true

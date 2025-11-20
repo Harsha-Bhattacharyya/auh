@@ -1,0 +1,99 @@
+name: Dev Release 4 - Manual Testing
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_suffix:
+        description: 'Version suffix (e.g., beta1, rc1, test1)'
+        required: true
+        default: 'test'
+      description:
+        description: 'Release description'
+        required: false
+        default: 'Manual testing build'
+
+permissions:
+  contents: write
+
+jobs:
+  dev-release:
+    name: Create Manual Dev Release
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential curl git jq texinfo
+    
+    - name: Generate version
+      id: version
+      run: |
+        # Generate version from input
+        SHORT_SHA=$(git rev-parse --short HEAD)
+        VERSION="dev-${{ github.event.inputs.version_suffix }}-${SHORT_SHA}"
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
+        echo "Dev version: ${VERSION}"
+    
+    - name: Build auh
+      run: |
+        make clean
+        make
+        strip auh
+    
+    - name: Build documentation
+      run: |
+        make docs
+    
+    - name: Create release package
+      run: |
+        mkdir -p release-assets
+        cp auh release-assets/
+        cp auh.1 release-assets/
+        cp auh.info release-assets/
+        cp auh.html release-assets/
+        cp README.md release-assets/
+        cp COPYING release-assets/
+        tar -czf auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz -C release-assets .
+        sha256sum auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz > auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz.sha256
+    
+    - name: Create Dev Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: dev-${{ github.event.inputs.version_suffix }}
+        name: Dev Release (Manual) - ${{ steps.version.outputs.version }}
+        body: |
+          ## Manual Testing Build
+          
+          **Version:** ${{ steps.version.outputs.version }}
+          **Suffix:** ${{ github.event.inputs.version_suffix }}
+          **Commit:** ${{ github.sha }}
+          **Triggered by:** @${{ github.actor }}
+          **Built:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          
+          ### ⚠️ Warning
+          This is a manual testing build. It may contain experimental features 
+          and should be used for testing purposes only.
+          
+          ### Description
+          ${{ github.event.inputs.description }}
+          
+          ### Installation
+          ```bash
+          wget https://github.com/${{ github.repository }}/releases/download/dev-${{ github.event.inputs.version_suffix }}/auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz
+          tar -xzf auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz
+          sudo install -m 755 auh /usr/bin/
+          ```
+          
+          ### Testing Notes
+          Please test this build and report any issues found.
+        files: |
+          auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz
+          auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz.sha256
+        draft: false
+        prerelease: true

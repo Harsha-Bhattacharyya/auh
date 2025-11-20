@@ -1,0 +1,102 @@
+name: Dev Release 1 - Main Branch
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - 'COPYING'
+      - 'CODE_OF_CONDUCT.md'
+      - 'CONTRIBUTING.md'
+      - 'SECURITY.md'
+
+permissions:
+  contents: write
+
+jobs:
+  dev-release:
+    name: Create Dev Release (Main Branch)
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential curl git jq texinfo
+    
+    - name: Generate version
+      id: version
+      run: |
+        # Generate version from commit info
+        COMMIT_COUNT=$(git rev-list --count HEAD)
+        SHORT_SHA=$(git rev-parse --short HEAD)
+        VERSION="dev-main-${COMMIT_COUNT}-${SHORT_SHA}"
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
+        echo "Dev version: ${VERSION}"
+    
+    - name: Build auh
+      run: |
+        make clean
+        make
+        strip auh
+    
+    - name: Build documentation
+      run: |
+        make docs
+    
+    - name: Create release package
+      run: |
+        mkdir -p release-assets
+        cp auh release-assets/
+        cp auh.1 release-assets/
+        cp auh.info release-assets/
+        cp auh.html release-assets/
+        cp README.md release-assets/
+        cp COPYING release-assets/
+        tar -czf auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz -C release-assets .
+        sha256sum auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz > auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz.sha256
+    
+    - name: Delete existing dev-main release
+      run: |
+        gh release delete dev-main --yes || true
+        git push origin :refs/tags/dev-main || true
+      env:
+        GH_TOKEN: ${{ github.token }}
+    
+    - name: Create/Update Dev Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: dev-main
+        name: Dev Release (Main Branch) - ${{ steps.version.outputs.version }}
+        body: |
+          ## Development Build from Main Branch
+          
+          **Version:** ${{ steps.version.outputs.version }}
+          **Commit:** ${{ github.sha }}
+          **Branch:** main
+          **Built:** ${{ github.event.head_commit.timestamp }}
+          
+          ### ⚠️ Warning
+          This is an automated development build from the main branch. 
+          It may contain unstable features and should be used for testing only.
+          
+          ### Latest Commit
+          ${{ github.event.head_commit.message }}
+          
+          ### Installation
+          ```bash
+          wget https://github.com/${{ github.repository }}/releases/download/dev-main/auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz
+          tar -xzf auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz
+          sudo install -m 755 auh /usr/bin/
+          ```
+        files: |
+          auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz
+          auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz.sha256
+        draft: false
+        prerelease: true

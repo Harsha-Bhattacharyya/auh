@@ -17,6 +17,18 @@ auh (short for Arch User Helper) is a modern AUR helper.
 - `base-devel`
 
 ### Install:
+
+#### From Release (Recommended)
+```bash
+# Download the latest release
+VERSION=v1.0.0  # Replace with the latest version
+wget https://github.com/Harsha-Bhattacharyya/auh/releases/download/${VERSION}/auh-${VERSION}-linux-x86_64.tar.gz
+tar -xzf auh-${VERSION}-linux-x86_64.tar.gz
+sudo install -m 755 auh /usr/bin/
+sudo install -m 644 auh.1 /usr/share/man/man1/
+```
+
+#### From Source
 ```bash
 git clone https://github.com/Harsha-Bhattacharyya/auh.git
 cd auh/
@@ -46,6 +58,18 @@ make install
   - auh remove -s yay            # Remove package with dependencies
   - auh update                   # Full system upgrade
   - auh update yay               # Update specific package
+
+### CI/CD and Releases:
+  This project includes automated CI/CD pipelines:
+  - **Continuous Integration**: Automatic builds and tests on every push and PR
+  - **Main Releases**: Stable releases tagged with semantic versioning (v1.0.0, v1.1.0, etc.)
+  - **Dev Releases**: Four types of development builds for testing:
+    1. Builds from main branch commits
+    2. Builds after PR merges
+    3. Nightly automated builds
+    4. Manual testing builds
+  
+  See [.github/CICD.md](.github/CICD.md) for detailed documentation.
 
 ### LICENSE:
   GPL-V3 located in COPYING
