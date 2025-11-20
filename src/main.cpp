@@ -24,6 +24,7 @@
 #include <array>      // For fixed-size arrays
 #include <cstdio>     // For FILE, popen, pclose
 #include <cstdlib>    // For system, exit
+#include <getopt.h>   // For getopt_long
 #include <iostream>   // For cout, cerr
 #include <memory>     // For unique_ptr
 #include <sstream>    // For istringstream
@@ -165,16 +166,17 @@ install_pkg (const string &package, const string &url)
 /**
  * remove_pkg - Remove an installed package
  * @package: Package name to remove
+ * @autoremove: If true, also remove dependencies not required by other packages
  *
- * Removes a package using pacman with -Rsn flags:
+ * Removes a package using pacman:
  * -R: Remove package
- * -s: Remove dependencies not required by other packages
- * -n: Remove configuration files
+ * -s: Remove dependencies not required by other packages (if autoremove is true)
+ * -n: Remove configuration files (if autoremove is true)
  *
  * Return: 0 on success, 1 on failure
  */
 int
-remove_pkg (const string &package)
+remove_pkg (const string &package, bool autoremove = false)
 {
   // Check if package is installed before attempting removal
   if (!is_installed (package))
@@ -183,7 +185,8 @@ remove_pkg (const string &package)
       return 0;
     }
   
-  string cmd = "sudo pacman -Rsn --noconfirm " + package;
+  string flags = autoremove ? "-Rsn" : "-R";
+  string cmd = "sudo pacman " + flags + " --noconfirm " + package;
   cout << "Removing " << package << "...\n";
   int rc = system (cmd.c_str ());
   if (rc != 0)
@@ -573,16 +576,44 @@ sync_explicit ()
 }
 
 /**
+ * print_usage - Display program usage information
+ *
+ * Prints the command-line usage syntax and available commands for auh.
+ */
+void
+print_usage ()
+{
+  cout << "Usage: auh <command> [options] [packages...]\n\n";
+  cout << "Commands:\n";
+  cout << "  install     Install packages from AUR\n";
+  cout << "  remove      Remove packages\n";
+  cout << "  update      Update packages or perform full system upgrade\n";
+  cout << "  clean       Clean package cache\n";
+  cout << "  sync        List explicitly installed AUR packages\n\n";
+  cout << "Install options:\n";
+  cout << "  -g, --github    Install from GitHub mirror instead of AUR\n\n";
+  cout << "Remove options:\n";
+  cout << "  -s, --autoremove    Also remove dependencies not required by other packages\n\n";
+  cout << "Examples:\n";
+  cout << "  auh install yay pikaur       # Install packages from AUR\n";
+  cout << "  auh install -g yay           # Install from GitHub mirror\n";
+  cout << "  auh remove yay               # Remove package only\n";
+  cout << "  auh remove -s yay            # Remove package with dependencies\n";
+  cout << "  auh update                   # Full system upgrade\n";
+  cout << "  auh update yay               # Update specific package\n";
+}
+
+/**
  * main - Entry point for auh program
  * @argc: Argument count
  * @argv: Argument vector
  *
- * Parses command-line arguments and dispatches to appropriate handler functions.
+ * Parses command-line arguments using getopt_long and dispatches to appropriate
+ * handler functions.
  *
  * Supported commands:
- * - install: Install packages from AUR (with automatic fallback to GitHub)
- * - installg: Install packages from GitHub mirror
- * - remove: Remove packages
+ * - install: Install packages from AUR (supports -g/--github flag)
+ * - remove: Remove packages (supports -s/--autoremove flag)
  * - update: Update packages or perform full system upgrade
  * - clean: Clean package cache
  * - sync: List explicitly installed AUR packages
@@ -595,8 +626,7 @@ main (int argc, char **argv)
   // Require at least one command argument
   if (argc < 2)
     {
-      cout << "Usage: auh <install|installg|remove|update|clean|sync> "
-              "[packages...]\n";
+      print_usage ();
       return 1;
     }
 
@@ -604,54 +634,97 @@ main (int argc, char **argv)
 
   if (cmd == "install")
     {
-      if (argc < 3)
+      // Parse install options
+      bool use_github = false;
+      int opt;
+      
+      // Define long options for install command
+      static struct option long_options[] = {
+        {"github", no_argument, 0, 'g'},
+        {0, 0, 0, 0}
+      };
+      
+      // Reset getopt state for proper parsing
+      optind = 2;
+      
+      // Parse options
+      while ((opt = getopt_long (argc, argv, "g", long_options, NULL)) != -1)
         {
-          cout << "Usage: auh install <packages...>\n";
+          switch (opt)
+            {
+            case 'g':
+              use_github = true;
+              break;
+            default:
+              cout << "Usage: auh install [-g|--github] <packages...>\n";
+              return 1;
+            }
+        }
+      
+      // Check if packages are provided
+      if (optind >= argc)
+        {
+          cout << "Usage: auh install [-g|--github] <packages...>\n";
           return 1;
         }
       
-      // Check AUR availability once before processing packages
-      bool aur_available = is_aur_up ();
-
-      // Collect all packages into a vector for parallel installation
+      // Collect all packages into a vector
       vector<string> packages;
-      for (int i = 2; i < argc; ++i)
+      for (int i = optind; i < argc; ++i)
         {
           packages.push_back (argv[i]);
-        }
-
-      // Install packages in parallel (uses AUR or falls back to GitHub)
-      install_packages_parallel (packages, aur_available);
-    }
-  else if (cmd == "installg")
-    {
-      if (argc < 3)
-        {
-          cout << "Usage: auh installg <packages...>\n";
-          return 1;
         }
       
-      // Collect all packages into a vector for parallel installation
-      vector<string> packages;
-      for (int i = 2; i < argc; ++i)
+      // Determine whether to use AUR or GitHub
+      bool use_aur = !use_github;
+      if (use_aur)
         {
-          packages.push_back (argv[i]);
+          // Check AUR availability for automatic fallback
+          use_aur = is_aur_up ();
         }
-
-      // Install packages in parallel from GitHub mirror
-      install_packages_parallel (packages, false);
+      
+      // Install packages in parallel
+      return install_packages_parallel (packages, use_aur);
     }
   else if (cmd == "remove")
     {
-      if (argc < 3)
+      // Parse remove options
+      bool autoremove = false;
+      int opt;
+      
+      // Define long options for remove command
+      static struct option long_options[] = {
+        {"autoremove", no_argument, 0, 's'},
+        {0, 0, 0, 0}
+      };
+      
+      // Reset getopt state for proper parsing
+      optind = 2;
+      
+      // Parse options
+      while ((opt = getopt_long (argc, argv, "s", long_options, NULL)) != -1)
         {
-          cout << "Usage: auh remove <packages...>\n";
+          switch (opt)
+            {
+            case 's':
+              autoremove = true;
+              break;
+            default:
+              cout << "Usage: auh remove [-s|--autoremove] <packages...>\n";
+              return 1;
+            }
+        }
+      
+      // Check if packages are provided
+      if (optind >= argc)
+        {
+          cout << "Usage: auh remove [-s|--autoremove] <packages...>\n";
           return 1;
         }
       
       // Remove each package sequentially
-      for (int i = 2; i < argc; ++i)
-        remove_pkg (argv[i]);
+      for (int i = optind; i < argc; ++i)
+        remove_pkg (argv[i], autoremove);
     }
   else if (cmd == "update")
     {
@@ -680,9 +753,8 @@ main (int argc, char **argv)
   else
     {
       // Unknown command
-      cout << "Unknown command: " << cmd
-           << "\nUsage: auh <install|installg|remove|update|clean|sync> "
-              "[packages...]\n";
+      cout << "Unknown command: " << cmd << "\n\n";
+      print_usage ();
       return 1;
     }
 

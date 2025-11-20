@@ -29,15 +29,28 @@ make install
 ```
 
 ### Usage:
-  auh <install/installg/remove/update/clean/sync> pkg1 pkg2 ...
+  auh <command> [options] [packages...]
 
   Commands:
   - install: Install packages from AUR (falls back to GitHub mirror if AUR is down)
-  - installg: Install packages from GitHub mirror
   - remove: Remove packages
   - update: Update packages or perform full system upgrade
   - clean: Clean package cache
   - sync: List explicitly installed packages that are available in AUR
+
+  Install options:
+  - -g, --github: Install from GitHub mirror instead of AUR
+
+  Remove options:
+  - -s, --autoremove: Also remove dependencies not required by other packages
+
+  Examples:
+  - auh install yay pikaur       # Install packages from AUR
+  - auh install -g yay           # Install from GitHub mirror
+  - auh remove yay               # Remove package only
+  - auh remove -s yay            # Remove package with dependencies
+  - auh update                   # Full system upgrade
+  - auh update yay               # Update specific package
 
 ### LICENSE:
   GPL-V3 located in COPYING

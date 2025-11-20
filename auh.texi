@@ -110,17 +110,22 @@ Before installing, ensure you have these dependencies:
 The general syntax for auh is:
 
 @example
-auh <command> [packages...]
+auh <command> [options] [packages...]
 @end example
 
-where @var{command} is one of the available commands and @var{packages} is
-an optional list of package names.
+where @var{command} is one of the available commands, @var{options} are
+command-specific flags, and @var{packages} is an optional list of package names.
 
 @section Quick Start
 
 Install a package:
 @example
 auh install yay
+@end example
+
+Install a package from GitHub mirror:
+@example
+auh install -g yay
 @end example
 
 Install multiple packages:
@@ -138,6 +143,11 @@ Remove a package:
 auh remove yay
 @end example
 
+Remove a package with dependencies:
+@example
+auh remove -s yay
+@end example
+
 @node Commands
 @chapter Commands
 
@@ -145,50 +155,79 @@ auh remove yay
 
 @cindex install command
 @example
-auh install <packages...>
+auh install [options] <packages...>
 @end example
 
 Install one or more packages from AUR. If the AUR is unavailable, automatically
 falls back to GitHub mirror.
 
+@subsection Options
+
+@table @option
+@item -g, --github
+Install packages directly from GitHub mirror instead of AUR.
+@end table
+
 The install command:
 @itemize @bullet
 @item Validates package names
 @item Checks if packages are already installed
-@item Queries the AUR for package information
+@item Queries the AUR for package information (unless -g is used)
 @item Clones the package repository
 @item Builds the package using makepkg
 @item Installs the built package
 @item Supports parallel installation of multiple packages
 @end itemize
 
-@section installg
+@subsection Examples
 
-@cindex installg command
+Install from AUR:
 @example
-auh installg <packages...>
+auh install yay
 @end example
 
-Install packages directly from GitHub mirror, bypassing the AUR. Useful when:
-@itemize @bullet
-@item The AUR is experiencing issues
-@item You prefer to use the GitHub mirror
-@item Testing mirror functionality
-@end itemize
+Install from GitHub mirror:
+@example
+auh install -g yay
+auh install --github yay
+@end example
 
 @section remove
 
 @cindex remove command
 @example
-auh remove <packages...>
+auh remove [options] <packages...>
 @end example
 
-Remove one or more installed packages using pacman. This command:
+Remove one or more installed packages using pacman. 
+
+@subsection Options
+
+@table @option
+@item -s, --autoremove
+Also remove dependencies that are not required by other packages. This uses
+pacman -Rsn flags instead of just -R.
+@end table
+
+This command:
 @itemize @bullet
 @item Checks if the package is installed
-@item Removes the package and its dependencies
-@item Removes configuration files (using -Rsn flags)
+@item Removes the package
+@item Optionally removes dependencies and configuration files (with -s flag)
 @end itemize
+
+@subsection Examples
+
+Remove package only:
+@example
+auh remove yay
+@end example
+
+Remove package with dependencies:
+@example
+auh remove -s yay
+auh remove --autoremove yay
+@end example
 
 @section update
 
