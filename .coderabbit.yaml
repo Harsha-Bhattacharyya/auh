@@ -1,0 +1,14 @@
+language: "en-US"
+reviews:
+  review_status: false
+  profile: "assertive"
+  auto_review:
+    enabled: true
+  tools:
+    eslint: { enabled: true }
+chat:
+  auto_reply: true
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns: ["**/copilot-instructions.md"]
