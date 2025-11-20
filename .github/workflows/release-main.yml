@@ -1,0 +1,100 @@
+name: Main Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Triggers on version tags like v1.0.0, v2.1.3, etc.
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Main Release
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential curl git jq texinfo
+    
+    - name: Get version from tag
+      id: version
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/}
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
+        echo "Release version: ${VERSION}"
+    
+    - name: Build auh
+      run: |
+        make clean
+        make
+        strip auh
+    
+    - name: Build documentation
+      run: |
+        make docs
+    
+    - name: Create release package
+      run: |
+        mkdir -p release-assets
+        cp auh release-assets/
+        cp auh.1 release-assets/
+        cp auh.info release-assets/
+        cp auh.html release-assets/
+        cp README.md release-assets/
+        cp COPYING release-assets/
+        tar -czf auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz -C release-assets .
+        sha256sum auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz > auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz.sha256
+    
+    - name: Generate changelog
+      id: changelog
+      run: |
+        # Get the previous tag
+        PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+        if [ -z "$PREV_TAG" ]; then
+          CHANGELOG="Initial release"
+        else
+          CHANGELOG=$(git log ${PREV_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges)
+        fi
+        echo "changelog<<EOF" >> $GITHUB_OUTPUT
+        echo "$CHANGELOG" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+    
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        name: Release ${{ steps.version.outputs.version }}
+        body: |
+          ## auh - Arch User Helper ${{ steps.version.outputs.version }}
+          
+          ### Changes
+          ${{ steps.changelog.outputs.changelog }}
+          
+          ### Installation
+          ```bash
+          wget https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.version }}/auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz
+          tar -xzf auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz
+          sudo install -m 755 auh /usr/bin/
+          sudo install -m 644 auh.1 /usr/share/man/man1/
+          ```
+          
+          ### Files
+          - `auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz` - Binary distribution
+          - `auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz.sha256` - SHA256 checksum
+        files: |
+          auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz
+          auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz.sha256
+          release-assets/auh
+          release-assets/auh.1
+          release-assets/auh.info
+          release-assets/auh.html
+        draft: false
+        prerelease: false
+        generate_release_notes: true

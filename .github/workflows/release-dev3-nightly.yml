@@ -1,0 +1,131 @@
+name: Dev Release 3 - Nightly
+
+on:
+  schedule:
+    # Run daily at 2:00 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:  # Allow manual triggering
+
+permissions:
+  contents: write
+
+jobs:
+  check-changes:
+    name: Check for Recent Changes
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Check for commits in last 24 hours
+      id: check
+      run: |
+        # Check if there are commits in the last 24 hours
+        COMMITS=$(git log --since="24 hours ago" --oneline | wc -l)
+        if [ "$COMMITS" -gt 0 ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          echo "should_build=true" >> $GITHUB_OUTPUT
+          echo "Found $COMMITS commits in the last 24 hours"
+        else
+          echo "should_build=false" >> $GITHUB_OUTPUT
+          echo "No commits in the last 24 hours, skipping build"
+        fi
+
+  dev-release:
+    name: Create Nightly Dev Release
+    runs-on: ubuntu-latest
+    needs: check-changes
+    if: needs.check-changes.outputs.should_build == 'true'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential curl git jq texinfo
+    
+    - name: Generate version
+      id: version
+      run: |
+        # Generate version with date
+        DATE=$(date +%Y%m%d)
+        SHORT_SHA=$(git rev-parse --short HEAD)
+        VERSION="dev-nightly-${DATE}-${SHORT_SHA}"
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
+        echo "Dev version: ${VERSION}"
+    
+    - name: Build auh
+      run: |
+        make clean
+        make
+        strip auh
+    
+    - name: Build documentation
+      run: |
+        make docs
+    
+    - name: Create release package
+      run: |
+        mkdir -p release-assets
+        cp auh release-assets/
+        cp auh.1 release-assets/
+        cp auh.info release-assets/
+        cp auh.html release-assets/
+        cp README.md release-assets/
+        cp COPYING release-assets/
+        tar -czf auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz -C release-assets .
+        sha256sum auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz > auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz.sha256
+    
+    - name: Delete existing dev-nightly release
+      run: |
+        gh release delete dev-nightly --yes || true
+        git push origin :refs/tags/dev-nightly || true
+      env:
+        GH_TOKEN: ${{ github.token }}
+    
+    - name: Get recent commits
+      id: commits
+      run: |
+        COMMITS=$(git log --since="24 hours ago" --pretty=format:"- %s (%h)" --no-merges)
+        echo "commits<<EOF" >> $GITHUB_OUTPUT
+        echo "$COMMITS" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+    
+    - name: Create/Update Nightly Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: dev-nightly
+        name: Dev Release (Nightly) - ${{ steps.version.outputs.version }}
+        body: |
+          ## Nightly Development Build
+          
+          **Version:** ${{ steps.version.outputs.version }}
+          **Commit:** ${{ github.sha }}
+          **Built:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          
+          ### ⚠️ Warning
+          This is an automated nightly build. It may contain unstable features 
+          and should be used for testing only.
+          
+          ### Recent Changes (Last 24 hours)
+          ${{ steps.commits.outputs.commits }}
+          
+          ### Installation
+          ```bash
+          wget https://github.com/${{ github.repository }}/releases/download/dev-nightly/auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz
+          tar -xzf auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz
+          sudo install -m 755 auh /usr/bin/
+          ```
+        files: |
+          auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz
+          auh-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz.sha256
+        draft: false
+        prerelease: true

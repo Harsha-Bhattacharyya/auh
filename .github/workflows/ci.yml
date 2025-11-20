@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential curl git jq clang-format clang-tidy texinfo
+    
+    - name: Check code format
+      run: |
+        make format
+        if ! git diff --exit-code; then
+          echo "Code formatting check failed. Please run 'make format' locally."
+          exit 1
+        fi
+      continue-on-error: true
+    
+    - name: Build auh
+      run: |
+        make clean
+        make
+    
+    - name: Verify binary
+      run: |
+        ./auh 2>&1 || true
+        file ./auh
+        ldd ./auh || true
+    
+    - name: Build documentation
+      run: |
+        make docs
+    
+    - name: Upload binary artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: auh-binary-${{ github.sha }}
+        path: auh
+        retention-days: 7
+    
+    - name: Upload documentation artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: auh-docs-${{ github.sha }}
+        path: |
+          auh.info
+          auh.html
+          auh.1
+        retention-days: 7
+
+  lint:
+    name: Code Quality Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang-tidy
+    
+    - name: Run clang-tidy
+      run: |
+        make lint || true
+      continue-on-error: true
