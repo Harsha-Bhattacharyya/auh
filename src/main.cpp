@@ -119,7 +119,8 @@ is_in_main_repos (const string &package)
   if (!is_valid_package_name (package))
     return false;
   
-  string cmd = "pacman -Ss '^" + package + "$' > /dev/null 2>&1";
+  // Use pacman -Si for exact package lookup
+  string cmd = "pacman -Si " + package + " > /dev/null 2>&1";
   return system (cmd.c_str ()) == 0;
 }
 
