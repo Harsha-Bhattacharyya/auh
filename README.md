@@ -39,10 +39,11 @@ make install
   auh <command> [options] [packages...]
 
   Commands:
-  - install: Install packages from AUR (falls back to GitHub mirror if AUR is down)
+  - install: Install packages (checks main repos first, then AUR if not found)
   - remove: Remove packages
   - update: Update packages or perform full system upgrade
   - clean: Clean package cache
+  - autoremove: Remove orphaned packages (dependencies no longer needed)
   - sync: List explicitly installed packages that are available in AUR
 
   Install options:
@@ -50,12 +51,16 @@ make install
 
   Remove options:
   - -s, --autoremove: Also remove dependencies not required by other packages
+  - -p, --purge: Also remove configuration files
 
   Examples:
-  - auh install yay pikaur       # Install packages from AUR
+  - auh install yay pikaur       # Install packages (checks main repos first, then AUR)
   - auh install -g yay           # Install from GitHub mirror
   - auh remove yay               # Remove package only
-  - auh remove -s yay            # Remove package with dependencies
+  - auh remove -s yay            # Remove package with unneeded dependencies (pacman -Rs)
+  - auh remove -p yay            # Remove package with config files (pacman -Rn)
+  - auh remove -s -p yay         # Remove package with dependencies and configs (pacman -Rns)
+  - auh autoremove               # Remove orphaned packages
   - auh update                   # Full system upgrade
   - auh update yay               # Update specific package
 

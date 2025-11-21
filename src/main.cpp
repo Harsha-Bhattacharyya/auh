@@ -104,28 +104,81 @@ is_installed (const string &package)
 }
 
 /**
- * install_pkg - Install a package from AUR
- * @package: Package name to install
- * @url: Git URL of the package repository
+ * is_in_main_repos - Check if a package is available in main repositories
+ * @package: Package name to check
  *
- * Installs a package from the AUR by:
- * 1. Checking if already installed (skip if yes)
- * 2. Querying AUR API to verify package exists
- * 3. Cloning the git repository
- * 4. Building with makepkg
- * 5. Installing the built package
+ * Uses pacman to query if a package is available in the official Arch Linux
+ * repositories (core, extra, community, multilib, etc.).
+ *
+ * Return: true if package is in main repos, false otherwise
+ */
+static bool
+is_in_main_repos (const string &package)
+{
+  // Validate package name to prevent command injection
+  if (!is_valid_package_name (package))
+    return false;
+  
+  // Use pacman -Si for exact package lookup
+  string cmd = "pacman -Si " + package + " > /dev/null 2>&1";
+  return system (cmd.c_str ()) == 0;
+}
+
+/**
+ * install_pkg - Install a package from AUR or main repos
+ * @package: Package name to install
+ * @url: Git URL of the package repository (for AUR)
+ *
+ * Installs a package by:
+ * 1. Validating package name format
+ * 2. Checking if already installed (skip if yes)
+ * 3. Checking if package exists in main repos
+ * 4. If in main repos, install via pacman -S
+ * 5. If not in main repos, install from AUR:
+ *    - Query AUR API to verify package exists
+ *    - Clone the git repository
+ *    - Build with makepkg
+ *    - Install the built package
  *
  * Return: 0 on success, 1 on failure
  */
 int
 install_pkg (const string &package, const string &url)
 {
+  // Validate package name to prevent command injection
+  if (!is_valid_package_name (package))
+    {
+      cerr << "Invalid package name: " << package << '\n';
+      return 1;
+    }
+
   // Skip if already installed
   if (is_installed (package))
     {
       cout << package << " is already installed; skipping.\n";
       return 0;
     }
+
+  // Check if package is in main repos first
+  if (is_in_main_repos (package))
+    {
+      cout << "Found " << package << " in main repos, installing via pacman...\n";
+      string cmd = "sudo pacman -S --noconfirm " + package;
+      int rc = system (cmd.c_str ());
+      if (rc == 0)
+        {
+          cout << "Successfully installed " << package << " from main repos\n";
+          return 0;
+        }
+      else
+        {
+          cerr << "Failed to install " << package << " from main repos\n";
+          return 1;
+        }
+    }
+
+  // Package not in main repos, try AUR
+  cout << "Package not found in main repos, checking AUR...\n";
 
   // Query AUR API to check if package exists
   string pcmd = "curl -s \"https://aur.archlinux.org/rpc/?v=5&type=info&arg="
@@ -138,12 +191,12 @@ install_pkg (const string &package, const string &url)
   // Empty results array means package not found
   if (out == "[]")
     {
-      cerr << "Package not found: " << package << '\n';
+      cerr << "Package not found in main repos or AUR: " << package << '\n';
       return 1;
     }
 
   // Clone the package repository
-  cout << "Cloning " << package << "...\n";
+  cout << "Cloning " << package << " from AUR...\n";
   string ccmd = "git clone " + url + " &> /dev/null";
   if (system (ccmd.c_str ()) != 0)
     {
@@ -167,17 +220,31 @@ install_pkg (const string &package, const string &url)
  * remove_pkg - Remove an installed package
  * @package: Package name to remove
  * @autoremove: If true, also remove dependencies not required by other packages
+ * @purge: If true, also remove configuration files
  *
  * Removes a package using pacman:
  * -R: Remove package
  * -s: Remove dependencies not required by other packages (if autoremove is true)
- * -n: Remove configuration files (if autoremove is true)
+ * -n: Remove configuration files (if purge is true)
+ *
+ * Flag combinations:
+ * - autoremove=false, purge=false: -R (remove package only)
+ * - autoremove=true, purge=false: -Rs (remove package + unneeded deps)
+ * - autoremove=false, purge=true: -Rn (remove package + configs)
+ * - autoremove=true, purge=true: -Rns (remove package + unneeded deps + configs)
  *
  * Return: 0 on success, 1 on failure
  */
 int
-remove_pkg (const string &package, bool autoremove = false)
+remove_pkg (const string &package, bool autoremove = false, bool purge = false)
 {
+  // Validate package name to prevent command injection
+  if (!is_valid_package_name (package))
+    {
+      cerr << "Invalid package name: " << package << '\n';
+      return 1;
+    }
+
   // Check if package is installed before attempting removal
   if (!is_installed (package))
     {
@@ -185,7 +252,13 @@ remove_pkg (const string &package, bool autoremove = false)
       return 0;
     }
   
-  string flags = autoremove ? "-Rsn" : "-R";
+  // Build pacman flags based on options
+  string flags = "-R";
+  if (autoremove)
+    flags += "s";
+  if (purge)
+    flags += "n";
+  
   string cmd = "sudo pacman " + flags + " --noconfirm " + package;
   cout << "Removing " << package << "...\n";
   int rc = system (cmd.c_str ());
@@ -266,6 +339,84 @@ update_pkg (const string &package)
       // Clean up temporary directory
       system (("rm -rf " + tmpdir).c_str ());
       return 0;
+    }
+}
+
+/**
+ * autoremove - Remove orphaned packages
+ *
+ * Removes packages that were installed as dependencies but are no longer
+ * required by any installed package. This is the pacman equivalent of
+ * apt's autoremove command.
+ *
+ * Uses 'pacman -Qdtq' to list orphaned packages and validates each before removal.
+ *
+ * Return: 0 on success, 1 on failure or if no orphans found
+ */
+int
+autoremove ()
+{
+  // First, check if there are any orphaned packages
+  string check_cmd = "pacman -Qdtq";
+  string orphans = run_capture (check_cmd);
+  
+  // Trim trailing whitespace
+  while (!orphans.empty () && isspace ((unsigned char)orphans.back ()))
+    orphans.pop_back ();
+  
+  if (orphans.empty ())
+    {
+      cout << "No orphaned packages found.\n";
+      return 0;
+    }
+  
+  // Parse orphaned packages line by line and validate each
+  vector<string> orphan_pkgs;
+  istringstream stream (orphans);
+  string pkg;
+  
+  while (getline (stream, pkg))
+    {
+      // Trim trailing whitespace from package name
+      while (!pkg.empty () && isspace ((unsigned char)pkg.back ()))
+        pkg.pop_back ();
+      
+      if (pkg.empty ())
+        continue;
+      
+      // Validate package name to prevent command injection
+      if (!is_valid_package_name (pkg))
+        {
+          cerr << "Skipping invalid package name: " << pkg << '\n';
+          continue;
+        }
+      
+      orphan_pkgs.push_back (pkg);
+    }
+  
+  if (orphan_pkgs.empty ())
+    {
+      cout << "No valid orphaned packages to remove.\n";
+      return 0;
+    }
+  
+  // Build safe command with validated package names
+  string cmd = "sudo pacman -Rs --noconfirm";
+  for (const auto &p : orphan_pkgs)
+    cmd += " " + p;
+  
+  // Remove orphaned packages
+  cout << "Removing orphaned packages...\n";
+  int rc = system (cmd.c_str ());
+  if (rc == 0)
+    {
+      cout << "Successfully removed orphaned packages\n";
+      return 0;
+    }
+  else
+    {
+      cerr << "Failed to remove orphaned packages\n";
+      return 1;
     }
 }
 
@@ -585,20 +736,25 @@ print_usage ()
 {
   cout << "Usage: auh <command> [options] [packages...]\n\n";
   cout << "Commands:\n";
-  cout << "  install     Install packages from AUR\n";
+  cout << "  install     Install packages from AUR or main repos\n";
   cout << "  remove      Remove packages\n";
   cout << "  update      Update packages or perform full system upgrade\n";
   cout << "  clean       Clean package cache\n";
+  cout << "  autoremove  Remove orphaned packages\n";
   cout << "  sync        List explicitly installed AUR packages\n\n";
   cout << "Install options:\n";
   cout << "  -g, --github    Install from GitHub mirror instead of AUR\n\n";
   cout << "Remove options:\n";
-  cout << "  -s, --autoremove    Also remove dependencies not required by other packages\n\n";
+  cout << "  -s, --autoremove    Also remove dependencies not required by other packages\n";
+  cout << "  -p, --purge         Also remove configuration files\n\n";
   cout << "Examples:\n";
-  cout << "  auh install yay pikaur       # Install packages from AUR\n";
+  cout << "  auh install yay pikaur       # Install packages from AUR or main repos\n";
   cout << "  auh install -g yay           # Install from GitHub mirror\n";
   cout << "  auh remove yay               # Remove package only\n";
   cout << "  auh remove -s yay            # Remove package with dependencies\n";
+  cout << "  auh remove -p yay            # Remove package with config files\n";
+  cout << "  auh remove -s -p yay         # Remove package with dependencies and configs\n";
+  cout << "  auh autoremove               # Remove orphaned packages\n";
   cout << "  auh update                   # Full system upgrade\n";
   cout << "  auh update yay               # Update specific package\n";
 }
@@ -690,11 +846,13 @@ main (int argc, char **argv)
     {
       // Parse remove options
       bool autoremove = false;
+      bool purge = false;
       int opt;
       
       // Define long options for remove command
       static struct option long_options[] = {
         {"autoremove", no_argument, 0, 's'},
+        {"purge", no_argument, 0, 'p'},
         {0, 0, 0, 0}
       };
       
@@ -702,15 +860,18 @@ main (int argc, char **argv)
       optind = 2;
       
       // Parse options
-      while ((opt = getopt_long (argc, argv, "s", long_options, NULL)) != -1)
+      while ((opt = getopt_long (argc, argv, "sp", long_options, NULL)) != -1)
         {
           switch (opt)
             {
             case 's':
               autoremove = true;
               break;
+            case 'p':
+              purge = true;
+              break;
             default:
-              cout << "Usage: auh remove [-s|--autoremove] <packages...>\n";
+              cout << "Usage: auh remove [-s|--autoremove] [-p|--purge] <packages...>\n";
               return 1;
             }
         }
@@ -718,13 +879,13 @@ main (int argc, char **argv)
       // Check if packages are provided
       if (optind >= argc)
         {
-          cout << "Usage: auh remove [-s|--autoremove] <packages...>\n";
+          cout << "Usage: auh remove [-s|--autoremove] [-p|--purge] <packages...>\n";
           return 1;
         }
       
       // Remove each package sequentially
       for (int i = optind; i < argc; ++i)
-        remove_pkg (argv[i], autoremove);
+        remove_pkg (argv[i], autoremove, purge);
     }
   else if (cmd == "update")
     {
@@ -744,6 +905,11 @@ main (int argc, char **argv)
     {
       // Clean package cache
       clean_cache ();
+    }
+  else if (cmd == "autoremove")
+    {
+      // Remove orphaned packages
+      autoremove ();
     }
   else if (cmd == "sync")
     {
