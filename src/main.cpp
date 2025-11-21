@@ -115,6 +115,10 @@ is_installed (const string &package)
 static bool
 is_in_main_repos (const string &package)
 {
+  // Validate package name to prevent command injection
+  if (!is_valid_package_name (package))
+    return false;
+  
   string cmd = "pacman -Ss '^" + package + "$' > /dev/null 2>&1";
   return system (cmd.c_str ()) == 0;
 }
@@ -125,10 +129,11 @@ is_in_main_repos (const string &package)
  * @url: Git URL of the package repository (for AUR)
  *
  * Installs a package by:
- * 1. Checking if already installed (skip if yes)
- * 2. Checking if package exists in main repos
- * 3. If in main repos, install via pacman -S
- * 4. If not in main repos, install from AUR:
+ * 1. Validating package name format
+ * 2. Checking if already installed (skip if yes)
+ * 3. Checking if package exists in main repos
+ * 4. If in main repos, install via pacman -S
+ * 5. If not in main repos, install from AUR:
  *    - Query AUR API to verify package exists
  *    - Clone the git repository
  *    - Build with makepkg
@@ -139,6 +144,13 @@ is_in_main_repos (const string &package)
 int
 install_pkg (const string &package, const string &url)
 {
+  // Validate package name to prevent command injection
+  if (!is_valid_package_name (package))
+    {
+      cerr << "Invalid package name: " << package << '\n';
+      return 1;
+    }
+
   // Skip if already installed
   if (is_installed (package))
     {
@@ -225,6 +237,13 @@ install_pkg (const string &package, const string &url)
 int
 remove_pkg (const string &package, bool autoremove = false, bool purge = false)
 {
+  // Validate package name to prevent command injection
+  if (!is_valid_package_name (package))
+    {
+      cerr << "Invalid package name: " << package << '\n';
+      return 1;
+    }
+
   // Check if package is installed before attempting removal
   if (!is_installed (package))
     {
@@ -329,7 +348,7 @@ update_pkg (const string &package)
  * required by any installed package. This is the pacman equivalent of
  * apt's autoremove command.
  *
- * Uses 'pacman -Qdtq' to list orphaned packages and 'pacman -Rs' to remove them.
+ * Uses 'pacman -Qdtq' to list orphaned packages and validates each before removal.
  *
  * Return: 0 on success, 1 on failure or if no orphans found
  */
@@ -350,9 +369,43 @@ autoremove ()
       return 0;
     }
   
+  // Parse orphaned packages line by line and validate each
+  vector<string> orphan_pkgs;
+  istringstream stream (orphans);
+  string pkg;
+  
+  while (getline (stream, pkg))
+    {
+      // Trim trailing whitespace from package name
+      while (!pkg.empty () && isspace ((unsigned char)pkg.back ()))
+        pkg.pop_back ();
+      
+      if (pkg.empty ())
+        continue;
+      
+      // Validate package name to prevent command injection
+      if (!is_valid_package_name (pkg))
+        {
+          cerr << "Skipping invalid package name: " << pkg << '\n';
+          continue;
+        }
+      
+      orphan_pkgs.push_back (pkg);
+    }
+  
+  if (orphan_pkgs.empty ())
+    {
+      cout << "No valid orphaned packages to remove.\n";
+      return 0;
+    }
+  
+  // Build safe command with validated package names
+  string cmd = "sudo pacman -Rs --noconfirm";
+  for (const auto &p : orphan_pkgs)
+    cmd += " " + p;
+  
   // Remove orphaned packages
   cout << "Removing orphaned packages...\n";
-  string cmd = "sudo pacman -Rs --noconfirm $(pacman -Qdtq)";
   int rc = system (cmd.c_str ());
   if (rc == 0)
     {
