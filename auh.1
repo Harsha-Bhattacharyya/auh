@@ -10,20 +10,23 @@ auh \- Arch User Helper for AUR package management
 .B auh
 (Arch User Helper) is a modern, lightweight AUR helper designed for Arch Linux. It provides a simple command-line interface for managing AUR packages with minimal dependencies and fast compile times.
 .PP
-The tool features automatic fallback to GitHub mirrors when the AUR is unavailable, parallel package installation for improved performance, and an APT-like command interface with getopts support for ease of use.
+The tool features automatic fallback to GitHub mirrors when the AUR is unavailable, parallel package installation for improved performance, and an APT-like command interface with getopts support for ease of use. When installing packages, auh checks the main repositories first and only uses AUR if the package is not found in official repos.
 .SH COMMANDS
 .TP
 .B install
-Install packages from AUR. Automatically falls back to GitHub mirror if AUR is down.
+Install packages from main repositories or AUR. First checks official Arch repos, then falls back to AUR if not found. Automatically falls back to GitHub mirror if AUR is down.
 .TP
 .B remove
-Remove installed packages.
+Remove installed packages with optional flags to remove dependencies and configuration files.
 .TP
 .B update
 Update packages. If no package is specified, performs a full system upgrade.
 .TP
 .B clean
 Clean the package cache.
+.TP
+.B autoremove
+Remove orphaned packages (packages that were installed as dependencies but are no longer needed).
 .TP
 .B sync
 List explicitly installed packages that are available in AUR.
@@ -35,7 +38,10 @@ Install packages directly from GitHub mirror instead of AUR.
 .SS Remove Options
 .TP
 .BR \-s ", " \-\-autoremove
-Also remove dependencies that are not required by other packages (pacman -Rsn instead of -R).
+Also remove dependencies that are not required by other packages (pacman -Rs).
+.TP
+.BR \-p ", " \-\-purge
+Also remove configuration files (pacman -Rn). Can be combined with --autoremove for pacman -Rns.
 .SS Package Arguments
 .TP
 .I packages...
@@ -43,7 +49,7 @@ One or more package names to process. Package names should contain only alphanum
 .SH EXAMPLES
 .TP
 .B auh install yay
-Install the 'yay' package from AUR.
+Install the 'yay' package. First checks main repos, then AUR if not found.
 .TP
 .B auh install yay pikaur
 Install multiple packages in parallel.
@@ -55,13 +61,22 @@ Install a package directly from GitHub mirror using the -g flag.
 Install a package directly from GitHub mirror using the --github flag.
 .TP
 .B auh remove yay
-Remove the 'yay' package (uses pacman -R).
+Remove the 'yay' package only (uses pacman -R).
 .TP
 .B auh remove \-s yay
-Remove the 'yay' package and its dependencies (uses pacman -Rsn).
+Remove the 'yay' package and its unneeded dependencies (uses pacman -Rs).
 .TP
-.B auh remove \-\-autoremove yay
-Remove the 'yay' package and its dependencies using the long option form.
+.B auh remove \-p yay
+Remove the 'yay' package and its configuration files (uses pacman -Rn).
+.TP
+.B auh remove \-s \-p yay
+Remove the 'yay' package with dependencies and config files (uses pacman -Rns).
+.TP
+.B auh remove \-\-autoremove \-\-purge yay
+Same as above, using long option form.
+.TP
+.B auh autoremove
+Remove orphaned packages that are no longer needed.
 .TP
 .B auh update
 Perform a full system upgrade.
